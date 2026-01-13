@@ -48,3 +48,4 @@ failed_tracks_*.json
 
 # Cache
 .cache/
+.spotify_cache
