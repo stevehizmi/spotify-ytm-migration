@@ -5,6 +5,7 @@ import time
 import re
 import json
 import os
+import argparse
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -118,18 +119,79 @@ def add_song_to_playlist(ytmusic, song_name, artist_name, playlist_id):
         else:
             return False, f"Error adding {song_name}: {e}"
 
-def create_or_get_playlist(ytmusic, playlist_name):
-    """Create or get existing playlist"""
+def clear_playlist(ytmusic, playlist_id):
+    """Clear all items from a playlist"""
+    try:
+        # Get all items in the playlist
+        playlist_data = ytmusic.get_playlist(playlist_id, limit=None)
+        tracks = playlist_data.get('tracks', [])
+        
+        # Extract video IDs - ytmusicapi uses 'videoId' or 'setVideoId'
+        video_ids = []
+        for item in tracks:
+            video_id = item.get('videoId') or item.get('setVideoId')
+            if video_id:
+                video_ids.append(video_id)
+        
+        if video_ids:
+            # Remove all items in batches if needed (API might have limits)
+            # ytmusicapi remove_playlist_items can handle multiple items
+            ytmusic.remove_playlist_items(playlist_id, video_ids)
+            print(f"Cleared {len(video_ids)} items from playlist.")
+        else:
+            print("Playlist is already empty.")
+        return True
+    except Exception as e:
+        print(f"Error clearing playlist: {e}")
+        return False
+
+def create_or_get_playlist(ytmusic, playlist_name, overwrite_existing=False):
+    """
+    Create or get existing playlist.
+    If playlist exists and overwrite_existing is True, clears the playlist.
+    If playlist exists and overwrite_existing is False, prompts user for action.
+    Returns (playlist_id, is_new_playlist)
+    """
     playlists = ytmusic.get_library_playlists()
     existing_playlist = next((pl for pl in playlists if pl['title'] == playlist_name), None)
     
     if existing_playlist:
-        print(f"Playlist '{playlist_name}' already exists. Playlist ID: {existing_playlist['playlistId']}")
-        return existing_playlist['playlistId']
+        playlist_id = existing_playlist['playlistId']
+        
+        if overwrite_existing is None:
+            # Prompt user for action
+            print(f"\n⚠️  Playlist '{playlist_name}' already exists!")
+            while True:
+                choice = input("Would you like to (a)ppend to existing playlist or (o)verwrite it? [a/o]: ").strip().lower()
+                if choice in ['a', 'append']:
+                    print(f"Will append to existing playlist '{playlist_name}'.")
+                    return playlist_id, False
+                elif choice in ['o', 'overwrite']:
+                    if clear_playlist(ytmusic, playlist_id):
+                        print(f"Playlist '{playlist_name}' cleared. Ready to add new tracks.")
+                        return playlist_id, False
+                    else:
+                        print("Failed to clear playlist. Exiting.")
+                        return None, False
+                else:
+                    print("Please enter 'a' for append or 'o' for overwrite.")
+        elif overwrite_existing:
+            # Overwrite mode - clear the playlist
+            if clear_playlist(ytmusic, playlist_id):
+                print(f"Playlist '{playlist_name}' cleared. Ready to add new tracks.")
+                return playlist_id, False
+            else:
+                print("Failed to clear playlist. Exiting.")
+                return None, False
+        else:
+            # Append mode
+            print(f"Playlist '{playlist_name}' already exists. Will append to it.")
+            return playlist_id, False
     else:
+        # Create new playlist
         new_playlist_id = ytmusic.create_playlist(playlist_name, 'Created using ytmusicapi')
         print(f"Playlist '{playlist_name}' created successfully. Playlist ID: {new_playlist_id}")
-        return new_playlist_id
+        return new_playlist_id, True
 
 def process_tracks(items, tracks_list):
     """Collect tracks as list of tuples: (song_name, artist_name, album_name)"""
@@ -150,52 +212,100 @@ def process_tracks(items, tracks_list):
             tracks_list.append((song_name, artist_name, album_name))
 
 # Main execution
-print("Fetching tracks from Spotify...")
-tracks = []
-results = sp.current_user_saved_tracks(limit=50)
-process_tracks(results['items'], tracks)
-
-while results['next']:
-    results = sp.next(results)
+def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description='Migrate Spotify saved tracks to YouTube Music playlist',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python spotify_collect.py
+  python spotify_collect.py --playlist "My Spotify Favorites"
+  python spotify_collect.py -p "My Playlist" --overwrite
+        """
+    )
+    parser.add_argument(
+        '-p', '--playlist',
+        type=str,
+        default='test-spotify',
+        help='Name of the YouTube Music playlist to create or use (default: test-spotify)'
+    )
+    parser.add_argument(
+        '--overwrite',
+        action='store_true',
+        help='If playlist exists, overwrite it without prompting (clears existing songs)'
+    )
+    parser.add_argument(
+        '--append',
+        action='store_true',
+        help='If playlist exists, append to it without prompting'
+    )
+    
+    args = parser.parse_args()
+    
+    # Determine overwrite behavior
+    overwrite_existing = None
+    if args.overwrite and args.append:
+        print("Error: Cannot use both --overwrite and --append. Choose one.")
+        return
+    elif args.overwrite:
+        overwrite_existing = True
+    elif args.append:
+        overwrite_existing = False
+    
+    print("Fetching tracks from Spotify...")
+    tracks = []
+    results = sp.current_user_saved_tracks(limit=50)
     process_tracks(results['items'], tracks)
-
-print(f"Found {len(tracks)} tracks from Spotify\n")
-
-yt = YTMusic('oauth.json')
-playlist_id = create_or_get_playlist(yt, "test-spotify")
-
-successful = 0
-failed = 0
-failed_tracks = []
-
-print("\nStarting to add tracks to YouTube Music...\n")
-
-for song_name, artist_name, album_name in tracks:
-    success, message = add_song_to_playlist(yt, song_name, artist_name, playlist_id)
-    print(message)
     
-    if success:
-        successful += 1
-    else:
-        failed += 1
-        failed_tracks.append({
-            'song': song_name,
-            'artist': artist_name,
-            'album': album_name,
-            'reason': message
-        })
+    while results['next']:
+        results = sp.next(results)
+        process_tracks(results['items'], tracks)
     
-    time.sleep(1)  # Rate limiting
+    print(f"Found {len(tracks)} tracks from Spotify\n")
+    
+    yt = YTMusic('oauth.json')
+    playlist_id, is_new = create_or_get_playlist(yt, args.playlist, overwrite_existing)
+    
+    if playlist_id is None:
+        print("Failed to get or create playlist. Exiting.")
+        return
 
-print(f"\n{'='*60}")
-print(f"✅ Successfully added: {successful}")
-print(f"❌ Failed to add: {failed}")
-print(f"{'='*60}")
+    successful = 0
+    failed = 0
+    failed_tracks = []
+    
+    print("\nStarting to add tracks to YouTube Music...\n")
+    
+    for song_name, artist_name, album_name in tracks:
+        success, message = add_song_to_playlist(yt, song_name, artist_name, playlist_id)
+        print(message)
+        
+        if success:
+            successful += 1
+        else:
+            failed += 1
+            failed_tracks.append({
+                'song': song_name,
+                'artist': artist_name,
+                'album': album_name,
+                'reason': message
+            })
+        
+        time.sleep(1)  # Rate limiting
+    
+    print(f"\n{'='*60}")
+    print(f"✅ Successfully added: {successful}")
+    print(f"❌ Failed to add: {failed}")
+    print(f"{'='*60}")
+    
+    # Save failed tracks to a file for manual review
+    if failed_tracks:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        failed_file = f"failed_tracks_{timestamp}.json"
+        with open(failed_file, 'w') as f:
+            json.dump(failed_tracks, f, indent=2)
+        print(f"\nFailed tracks saved to: {failed_file}")
 
-# Save failed tracks to a file for manual review
-if failed_tracks:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    failed_file = f"failed_tracks_{timestamp}.json"
-    with open(failed_file, 'w') as f:
-        json.dump(failed_tracks, f, indent=2)
-    print(f"\nFailed tracks saved to: {failed_file}")
+if __name__ == "__main__":
+    main()
