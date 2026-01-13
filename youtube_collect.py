@@ -1,30 +1,42 @@
-from ytmusicapi import YTMusic
+"""Create playlist and add songs to it in YouTube Music"""
+
 import re
+
+from ytmusicapi import YTMusic
+
 
 def normalize_text(text):
     """Remove special characters and normalize for comparison"""
     if not text:
         return ""
-    return re.sub(r'[^\w\s]', '', text.lower().strip())
+    return re.sub(r"[^\w\s]", "", text.lower().strip())
+
 
 def create_or_get_playlist(ytmusic, playlist_name):
     """Create or get existing playlist"""
     playlists = ytmusic.get_library_playlists()
-    existing_playlist = next((pl for pl in playlists if pl['title'] == playlist_name), None)
-    
-    if existing_playlist:
-        print(f"Playlist '{playlist_name}' already exists. Playlist ID: {existing_playlist['playlistId']}")
-        return existing_playlist['playlistId']
-    else:
-        new_playlist_id = ytmusic.create_playlist(playlist_name, 'Created using ytmusicapi')
-        print(f"Playlist '{playlist_name}' created successfully. Playlist ID: {new_playlist_id}")
-        return new_playlist_id
+    existing_playlist = next(
+        (pl for pl in playlists if pl["title"] == playlist_name), None
+    )
 
-yt = YTMusic('oauth.json')
+    if existing_playlist:
+        print(
+            f"Playlist '{playlist_name}' already exists. Playlist ID: {existing_playlist['playlistId']}"
+        )
+        return existing_playlist["playlistId"]
+
+    new_playlist_id = ytmusic.create_playlist(playlist_name, "Created using ytmusicapi")
+    print(
+        f"Playlist '{playlist_name}' created successfully. Playlist ID: {new_playlist_id}"
+    )
+    return new_playlist_id
+
+
+yt = YTMusic("oauth.json")
 playlist_id = create_or_get_playlist(yt, "test")
 
 # Search for a specific song with filter
-search_results = yt.search('Ride Twenty One Pilots', filter="songs", limit=5)
+search_results = yt.search("Ride Twenty One Pilots", filter="songs", limit=5)
 
 # Print the search results for debugging
 print("Search Results:")
