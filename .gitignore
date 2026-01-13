@@ -45,3 +45,6 @@ Thumbs.db
 
 # Failed tracks logs
 failed_tracks_*.json
+
+# Cache
+.cache/
