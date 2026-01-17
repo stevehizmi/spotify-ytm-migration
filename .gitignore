@@ -2,6 +2,7 @@
 oauth.json
 *.json
 !package.json
+cookies.txt
 
 # Environment variables
 .env

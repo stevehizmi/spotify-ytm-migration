@@ -10,7 +10,7 @@ from datetime import datetime
 import spotipy
 from dotenv import load_dotenv
 from spotipy.oauth2 import SpotifyOAuth
-from ytmusicapi import YTMusic
+from ytmusicapi import YTMusic, OAuthCredentials
 
 # Load environment variables
 load_dotenv()
@@ -312,18 +312,28 @@ Examples:
     elif args.append:
         overwrite_existing = False
 
-    print("Fetching tracks from Spotify...")
-    tracks = []
-    results = sp.current_user_saved_tracks(limit=50)
-    process_tracks(results["items"], tracks)
+    # print("Fetching tracks from Spotify...")
+    # tracks = []
+    # results = sp.current_user_saved_tracks(limit=50)
+    # process_tracks(results["items"], tracks)
 
-    while results["next"]:
-        results = sp.next(results)
-        process_tracks(results["items"], tracks)
+    # while results["next"]:
+    #     results = sp.next(results)
+    #     process_tracks(results["items"], tracks)
 
-    print(f"Found {len(tracks)} tracks from Spotify\n")
+    # print(f"Found {len(tracks)} tracks from Spotify\n")
 
-    yt = YTMusic('oauth.json')
+
+    yt = YTMusic(
+        "oauth.json",
+        oauth_credentials=OAuthCredentials(
+            client_id=YT_CLIENT_ID,
+            client_secret=YT_CLIENT_SECRET,
+        )
+    )
+    search_results = yt.search("Oasis Wonderwall")
+    print(search_results)
+    print(yt.get_library_playlists())
     playlist_id, is_new = create_or_get_playlist(yt, args.playlist, overwrite_existing)
 
     if playlist_id is None:
