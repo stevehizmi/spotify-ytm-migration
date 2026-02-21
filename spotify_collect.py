@@ -10,7 +10,7 @@ from datetime import datetime
 import spotipy
 from dotenv import load_dotenv
 from spotipy.oauth2 import SpotifyOAuth
-from ytmusicapi import YTMusic
+from ytmusicapi import YTMusic, OAuthCredentials
 
 # Load environment variables
 load_dotenv()
@@ -323,7 +323,13 @@ Examples:
 
     print(f"Found {len(tracks)} tracks from Spotify\n")
 
-    yt = YTMusic('oauth.json')
+    yt = YTMusic(
+        "oauth.json",
+        oauth_credentials=OAuthCredentials(
+            client_id=YT_CLIENT_ID,
+            client_secret=YT_CLIENT_SECRET,
+        )
+    )
     playlist_id, is_new = create_or_get_playlist(yt, args.playlist, overwrite_existing)
 
     if playlist_id is None:
